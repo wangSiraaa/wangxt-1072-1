@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Alarm } from '../types';
+import { Alarm, InsuranceClaim } from '../types';
 import { generateAlarmTrendData } from '../data/mockData';
 import {
   AlertTriangle,
@@ -14,6 +14,11 @@ import {
   XCircle,
   AlertCircle,
   Zap,
+  FileWarning,
+  Package,
+  Wrench,
+  ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import {
   LineChart,
@@ -51,6 +56,14 @@ export default function AlarmsPage() {
   const { state, dispatch } = useApp();
   const [selectedAlarm, setSelectedAlarm] = useState<Alarm | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'acknowledged' | 'resolved'>('all');
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [claimForm, setClaimForm] = useState({
+    title: '',
+    description: '',
+    type: 'temperature_risk' as InsuranceClaim['type'],
+    priority: 'high' as InsuranceClaim['priority'],
+    estimatedLoss: '',
+  });
 
   const trendData = generateAlarmTrendData();
 
@@ -84,6 +97,77 @@ export default function AlarmsPage() {
         userName: state.currentUser.name,
       },
     });
+  };
+
+  const handleOpenClaimModal = () => {
+    if (!selectedAlarm) return;
+    const showcase = state.showcases.find((s) => s.id === selectedAlarm.showcaseId);
+    const valuableItems = state.valuableItems.filter(
+      (v) => v.showcaseId === selectedAlarm.showcaseId && v.status === 'on_display'
+    );
+    const totalValue = valuableItems.reduce((sum, v) => sum + v.value, 0);
+
+    const typeMap: Record<string, InsuranceClaim['type']> = {
+      temperature: 'temperature_risk',
+      humidity: 'humidity_risk',
+      security: 'security_breach',
+      equipment: 'equipment_failure',
+    };
+
+    setClaimForm({
+      title: `${selectedAlarm.showcaseName}${alarmTypeConfig[selectedAlarm.type].label}风险报备`,
+      description: `${selectedAlarm.showcaseName}连续${selectedAlarm.continuousCount}次${alarmTypeConfig[selectedAlarm.type].label}，当前值${selectedAlarm.value}${
+        selectedAlarm.type === 'temperature' ? '°C' : '%'
+      }，阈值${selectedAlarm.threshold}${selectedAlarm.type === 'temperature' ? '°C' : '%'}。${selectedAlarm.message}。柜内有${valuableItems.length}件贵重货品，预估风险价值约¥${totalValue.toLocaleString()}。`,
+      type: typeMap[selectedAlarm.type] || 'other',
+      priority: selectedAlarm.level,
+      estimatedLoss: totalValue.toString(),
+    });
+    setShowClaimModal(true);
+  };
+
+  const handleSubmitClaim = () => {
+    if (!selectedAlarm) return;
+
+    const newClaim: InsuranceClaim = {
+      id: `ic-${Date.now()}`,
+      showcaseId: selectedAlarm.showcaseId,
+      showcaseName: selectedAlarm.showcaseName,
+      alarmId: selectedAlarm.id,
+      type: claimForm.type,
+      status: 'submitted',
+      priority: claimForm.priority,
+      title: claimForm.title,
+      description: claimForm.description,
+      reportedBy: state.currentUser.name,
+      reportedAt: new Date().toLocaleString('zh-CN'),
+      estimatedLoss: claimForm.estimatedLoss ? parseFloat(claimForm.estimatedLoss) : undefined,
+      relatedRepairIds: state.repairOrders
+        .filter((r) => r.showcaseId === selectedAlarm.showcaseId && r.status !== 'completed' && r.status !== 'closed')
+        .map((r) => r.id),
+      relatedAlarmIds: [selectedAlarm.id],
+    };
+
+    dispatch({ type: 'ADD_INSURANCE_CLAIM', payload: newClaim });
+    setShowClaimModal(false);
+  };
+
+  const getRelatedClaims = (showcaseId: string) => {
+    return state.insuranceClaims.filter((c) => c.showcaseId === showcaseId);
+  };
+
+  const getRelatedRepairs = (showcaseId: string) => {
+    return state.repairOrders.filter(
+      (r) => r.showcaseId === showcaseId && r.status !== 'completed' && r.status !== 'closed'
+    );
+  };
+
+  const getFrozenPlans = (showcaseId: string) => {
+    return state.newArrivalPlans.filter((p) => p.showcaseId === showcaseId && p.status === 'frozen');
+  };
+
+  const getValuableItems = (showcaseId: string) => {
+    return state.valuableItems.filter((v) => v.showcaseId === showcaseId && v.status === 'on_display');
   };
 
   return (
@@ -283,24 +367,117 @@ export default function AlarmsPage() {
                 )}
               </div>
 
-              {selectedAlarm.continuousCount >= 3 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-red-700 font-medium text-sm">
+              {selectedAlarm.continuousCount >= 2 && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
                     <AlertTriangle size={16} />
-                    连续超标红色提示
+                    连续超标红色警报
                   </div>
                   <p className="text-sm text-red-600 mt-1">
-                    该报警已连续 {selectedAlarm.continuousCount} 次超标，属于严重情况，
-                    已自动冻结该展柜的上新计划，请尽快处理。
+                    该报警已连续 <span className="font-bold">{selectedAlarm.continuousCount}</span> 次超标，
+                    属于严重情况。系统已自动冻结该展柜的上新计划。
                   </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-red-500">
+                      是否需要发起保险风险报备？
+                    </span>
+                    <button
+                      onClick={handleOpenClaimModal}
+                      className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                    >
+                      立即报备
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                  <FileWarning size={14} />
+                  风险影响链路
+                </div>
+                <div className="space-y-2">
+                  {getRelatedClaims(selectedAlarm.showcaseId).length > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 flex items-center gap-1">
+                        <FileWarning size={12} className="text-orange-500" />
+                        保险报备
+                      </span>
+                      <span className="text-orange-600 font-medium">
+                        {getRelatedClaims(selectedAlarm.showcaseId).length}条
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 flex items-center gap-1">
+                      <Wrench size={12} className="text-blue-500" />
+                      关联维修
+                    </span>
+                    <span className={`font-medium ${
+                      getRelatedRepairs(selectedAlarm.showcaseId).length > 0 ? 'text-blue-600' : 'text-gray-400'
+                    }`}>
+                      {getRelatedRepairs(selectedAlarm.showcaseId).length > 0
+                        ? `${getRelatedRepairs(selectedAlarm.showcaseId).length}项进行中`
+                        : '暂无'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 flex items-center gap-1">
+                      <Package size={12} className="text-purple-500" />
+                      上新冻结
+                    </span>
+                    <span className={`font-medium ${
+                      getFrozenPlans(selectedAlarm.showcaseId).length > 0 ? 'text-purple-600' : 'text-gray-400'
+                    }`}>
+                      {getFrozenPlans(selectedAlarm.showcaseId).length > 0
+                        ? `${getFrozenPlans(selectedAlarm.showcaseId).length}个冻结`
+                        : '正常'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 flex items-center gap-1">
+                      <Shield size={12} className="text-amber-500" />
+                      在柜贵重品
+                    </span>
+                    <span className="text-amber-600 font-medium">
+                      {getValuableItems(selectedAlarm.showcaseId).length}件
+                      （¥{getValuableItems(selectedAlarm.showcaseId).reduce((s, v) => s + v.value, 0).toLocaleString()}）
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {getRelatedClaims(selectedAlarm.showcaseId).length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <FileWarning size={14} className="text-orange-500" />
+                    相关保险报备
+                  </div>
+                  {getRelatedClaims(selectedAlarm.showcaseId).map((claim) => (
+                    <div key={claim.id} className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-orange-700">{claim.title}</span>
+                        <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full">
+                          {claim.status === 'draft' ? '草稿' :
+                           claim.status === 'submitted' ? '已提交' :
+                           claim.status === 'reviewing' ? '审核中' :
+                           claim.status === 'approved' ? '已批准' :
+                           claim.status === 'rejected' ? '已驳回' : '已结案'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-orange-600 mt-1">
+                        提交人：{claim.reportedBy} · {claim.reportedAt}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
                 {selectedAlarm.status === 'active' && (
                   <button
                     onClick={() => handleAcknowledge(selectedAlarm)}
-                    className="flex-1 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors"
+                    className="w-full py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors"
                   >
                     确认报警
                   </button>
@@ -309,9 +486,18 @@ export default function AlarmsPage() {
                   selectedAlarm.status === 'acknowledged') && (
                   <button
                     onClick={() => handleResolve(selectedAlarm)}
-                    className="flex-1 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors"
+                    className="w-full py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors"
                   >
                     标记解决
+                  </button>
+                )}
+                {selectedAlarm.continuousCount >= 2 && selectedAlarm.status !== 'resolved' && (
+                  <button
+                    onClick={handleOpenClaimModal}
+                    className="w-full py-2 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FileWarning size={14} />
+                    发起保险风险报备
                   </button>
                 )}
               </div>
@@ -323,6 +509,113 @@ export default function AlarmsPage() {
           )}
         </div>
       </div>
+
+      {showClaimModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-[500px] max-h-[85vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800">发起保险风险报备</h3>
+              <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded">
+                系统建议报备
+              </span>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  报备标题
+                </label>
+                <input
+                  type="text"
+                  value={claimForm.title}
+                  onChange={(e) => setClaimForm((prev) => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    风险类型
+                  </label>
+                  <select
+                    value={claimForm.type}
+                    onChange={(e) => setClaimForm((prev) => ({ ...prev, type: e.target.value as InsuranceClaim['type'] }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="temperature_risk">温度风险</option>
+                    <option value="humidity_risk">湿度风险</option>
+                    <option value="equipment_failure">设备故障</option>
+                    <option value="security_breach">安防异常</option>
+                    <option value="other">其他</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    优先级
+                  </label>
+                  <select
+                    value={claimForm.priority}
+                    onChange={(e) => setClaimForm((prev) => ({ ...prev, priority: e.target.value as InsuranceClaim['priority'] }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                    <option value="urgent">紧急</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  预估损失金额（元）
+                </label>
+                <input
+                  type="number"
+                  value={claimForm.estimatedLoss}
+                  onChange={(e) => setClaimForm((prev) => ({ ...prev, estimatedLoss: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="请输入预估损失金额"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  风险描述
+                </label>
+                <textarea
+                  value={claimForm.description}
+                  onChange={(e) => setClaimForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  rows={5}
+                  placeholder="请详细描述风险情况"
+                />
+              </div>
+              {selectedAlarm && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                  <div className="text-xs font-medium text-orange-700 mb-1">关联信息</div>
+                  <div className="text-xs text-orange-600 space-y-1">
+                    <div>关联报警：{selectedAlarm.showcaseName} - {alarmTypeConfig[selectedAlarm.type].label}</div>
+                    <div>连续超标次数：{selectedAlarm.continuousCount}次</div>
+                    <div>当前值：{selectedAlarm.value}{selectedAlarm.type === 'temperature' ? '°C' : '%'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowClaimModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSubmitClaim}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+              >
+                提交报备
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

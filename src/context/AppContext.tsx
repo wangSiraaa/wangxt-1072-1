@@ -9,6 +9,9 @@ import {
   NewArrivalPlan,
   User,
   Role,
+  InsuranceClaim,
+  ValuableItem,
+  InspectionReview,
 } from '../types';
 import {
   mockShowcases,
@@ -18,6 +21,8 @@ import {
   mockRepairOrders,
   mockNewArrivalPlans,
   mockUsers,
+  mockInsuranceClaims,
+  mockValuableItems,
 } from '../data/mockData';
 
 type Action =
@@ -36,7 +41,13 @@ type Action =
   | { type: 'UNFREEZE_NEW_ARRIVAL'; payload: { planId: string } }
   | { type: 'COMPLETE_NEW_ARRIVAL'; payload: { planId: string } }
   | { type: 'UPDATE_SHOWCASE'; payload: Showcase }
-  | { type: 'RECORD_TEMPERATURE'; payload: { showcaseId: string; temperature: number; humidity: number } };
+  | { type: 'RECORD_TEMPERATURE'; payload: { showcaseId: string; temperature: number; humidity: number } }
+  | { type: 'ADD_INSPECTION_PHOTO'; payload: { recordId: string; photo: { label: string; url: string; tag: 'environment' | 'equipment' | 'abnormal' | 'other' } } }
+  | { type: 'MAKEUP_INSPECTION'; payload: InspectionRecord }
+  | { type: 'REVIEW_INSPECTION'; payload: { recordId: string; review: InspectionReview } }
+  | { type: 'ADD_INSURANCE_CLAIM'; payload: InsuranceClaim }
+  | { type: 'UPDATE_INSURANCE_CLAIM'; payload: InsuranceClaim }
+  | { type: 'SUBMIT_INSURANCE_CLAIM'; payload: { claimId: string; userId: string; userName: string } };
 
 const initialState: AppState = {
   showcases: mockShowcases,
@@ -45,6 +56,8 @@ const initialState: AppState = {
   alarms: mockAlarms,
   repairOrders: mockRepairOrders,
   newArrivalPlans: mockNewArrivalPlans,
+  insuranceClaims: mockInsuranceClaims,
+  valuableItems: mockValuableItems,
   currentUser: mockUsers[0],
   currentView: 'showcases',
 };
@@ -91,9 +104,9 @@ function checkAndCreateAlarms(
     const recentRecords = inspectionRecords
       .filter((r) => r.showcaseId === showcase.id)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 3);
+      .slice(0, 2);
 
-    if (recentRecords.length >= 3) {
+    if (recentRecords.length >= 2) {
       const allTempHigh = recentRecords.every(
         (r) => r.temperature > showcase.tempThreshold.max
       );
@@ -113,7 +126,7 @@ function checkAndCreateAlarms(
             type: 'temperature',
             level: 'high',
             status: 'active',
-            message: '温度连续3次超过上限阈值',
+            message: '温度连续2次超过上限阈值',
             value: recentRecords[0].temperature,
             threshold: showcase.tempThreshold.max,
             startTime: recentRecords[recentRecords.length - 1].timestamp,
@@ -138,7 +151,7 @@ function checkAndCreateAlarms(
             type: 'humidity',
             level: 'high',
             status: 'active',
-            message: '湿度连续3次超过上限阈值',
+            message: '湿度连续2次超过上限阈值',
             value: recentRecords[0].humidity,
             threshold: showcase.humidityThreshold.max,
             startTime: recentRecords[recentRecords.length - 1].timestamp,
@@ -470,6 +483,110 @@ function reducer(state: AppState, action: Action): AppState {
           : s
       );
       return { ...state, showcases: updatedShowcases };
+    }
+
+    case 'ADD_INSPECTION_PHOTO': {
+      const updatedRecords = state.inspectionRecords.map((r) =>
+        r.id === action.payload.recordId
+          ? {
+              ...r,
+              photos: [
+                ...r.photos,
+                {
+                  id: `ph-${Date.now()}`,
+                  url: action.payload.photo.url,
+                  label: action.payload.photo.label,
+                  tag: action.payload.photo.tag,
+                  uploadedAt: new Date().toLocaleString('zh-CN'),
+                  uploadedBy: state.currentUser.name,
+                },
+              ],
+            }
+          : r
+      );
+      return { ...state, inspectionRecords: updatedRecords };
+    }
+
+    case 'MAKEUP_INSPECTION': {
+      const updatedRecords = [...state.inspectionRecords, action.payload];
+      const updatedAlarms = checkAndCreateAlarms(
+        state.showcases,
+        updatedRecords,
+        state.alarms
+      );
+      const updatedShowcases = state.showcases.map((s) =>
+        s.id === action.payload.showcaseId
+          ? {
+              ...s,
+              temperature: action.payload.temperature,
+              humidity: action.payload.humidity,
+              lastInspection: action.payload.timestamp,
+            }
+          : s
+      );
+      const finalShowcases = updatedShowcases.map((s) =>
+        checkShowcaseStatus(s, updatedAlarms)
+      );
+      const updatedNewArrivals = checkNewArrivalFreeze(
+        state.newArrivalPlans,
+        finalShowcases,
+        updatedAlarms,
+        state.repairOrders
+      );
+      const updatedPlans = state.inspectionPlans.map((p) =>
+        p.id === action.payload.planId
+          ? { ...p, status: 'completed' as const, missedCount: 0, lastCompleted: action.payload.timestamp }
+          : p
+      );
+      return {
+        ...state,
+        inspectionRecords: updatedRecords,
+        inspectionPlans: updatedPlans,
+        alarms: updatedAlarms,
+        showcases: finalShowcases,
+        newArrivalPlans: updatedNewArrivals,
+      };
+    }
+
+    case 'REVIEW_INSPECTION': {
+      const updatedRecords = state.inspectionRecords.map((r) =>
+        r.id === action.payload.recordId
+          ? {
+              ...r,
+              reviews: [...r.reviews, action.payload.review],
+              reviewStatus: action.payload.review.status,
+            }
+          : r
+      );
+      return { ...state, inspectionRecords: updatedRecords };
+    }
+
+    case 'ADD_INSURANCE_CLAIM': {
+      return {
+        ...state,
+        insuranceClaims: [...state.insuranceClaims, action.payload],
+      };
+    }
+
+    case 'UPDATE_INSURANCE_CLAIM': {
+      const updatedClaims = state.insuranceClaims.map((c) =>
+        c.id === action.payload.id ? action.payload : c
+      );
+      return { ...state, insuranceClaims: updatedClaims };
+    }
+
+    case 'SUBMIT_INSURANCE_CLAIM': {
+      const updatedClaims = state.insuranceClaims.map((c) =>
+        c.id === action.payload.claimId
+          ? {
+              ...c,
+              status: 'submitted' as const,
+              reportedBy: action.payload.userName,
+              reportedAt: new Date().toLocaleString('zh-CN'),
+            }
+          : c
+      );
+      return { ...state, insuranceClaims: updatedClaims };
     }
 
     default:

@@ -5,14 +5,18 @@ import {
   AlertTriangle,
   Wrench,
   Package,
+  Shield,
+  FileWarning,
 } from 'lucide-react';
 
 const navItems = [
+  { id: 'riskoverview', label: '风险总览', icon: Shield },
   { id: 'showcases', label: '展柜台账', icon: LayoutDashboard },
   { id: 'inspections', label: '巡查计划', icon: ClipboardList },
   { id: 'alarms', label: '报警趋势', icon: AlertTriangle },
   { id: 'repairs', label: '维修工单', icon: Wrench },
   { id: 'newarrivals', label: '上新限制', icon: Package },
+  { id: 'insurance', label: '保险报备', icon: FileWarning },
 ];
 
 export default function Sidebar() {

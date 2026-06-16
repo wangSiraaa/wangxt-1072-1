@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { RepairOrder } from '../types';
+import { RepairOrder, ValuableItem } from '../types';
 import {
   Wrench,
   Clock,
@@ -17,6 +17,9 @@ import {
   HelpCircle,
   XCircle,
   AlertOctagon,
+  Shield,
+  Diamond,
+  Eye,
 } from 'lucide-react';
 
 const repairTypeConfig = {
@@ -142,6 +145,42 @@ export default function RepairsPage() {
       ? state.repairOrders.find((r) => r.id === selectedOrder.id)!
       : selectedOrder;
 
+  const getShowcaseValuableItems = (showcaseId: string) => {
+    return state.valuableItems.filter(
+      (v) => v.showcaseId === showcaseId && v.status === 'on_display'
+    );
+  };
+
+  const getOverdueRiskShowcases = () => {
+    const overdueLightingOrLock = overdueOrders.filter(
+      (o) => o.type === 'lighting' || o.type === 'lock'
+    );
+    const showcaseMap = new Map<string, { orders: RepairOrder[]; items: ValuableItem[]; totalValue: number }>();
+
+    overdueLightingOrLock.forEach((order) => {
+      if (!showcaseMap.has(order.showcaseId)) {
+        const items = getShowcaseValuableItems(order.showcaseId);
+        const totalValue = items.reduce((sum, item) => sum + item.value, 0);
+        showcaseMap.set(order.showcaseId, {
+          orders: [],
+          items,
+          totalValue,
+        });
+      }
+      showcaseMap.get(order.showcaseId)!.orders.push(order);
+    });
+
+    return Array.from(showcaseMap.entries()).map(([showcaseId, data]) => ({
+      showcaseId,
+      showcaseName: data.orders[0].showcaseName,
+      orders: data.orders,
+      items: data.items,
+      totalValue: data.totalValue,
+    }));
+  };
+
+  const overdueRiskShowcases = getOverdueRiskShowcases();
+
   return (
     <div className="p-6">
       {escalatedOrders.length > 0 && (
@@ -177,6 +216,58 @@ export default function RepairsPage() {
         <StatCard title="已超时" value={overdueOrders.length} color="orange" />
         <StatCard title="已完成" value={state.repairOrders.filter((r) => r.status === 'completed').length} color="green" />
       </div>
+
+      {overdueRiskShowcases.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="text-red-500" size={20} />
+            <h3 className="font-semibold text-red-800">安保视角 - 超时维修风险柜贵重品</h3>
+            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+              {overdueRiskShowcases.length}个风险柜
+            </span>
+          </div>
+          <p className="text-sm text-red-600 mb-4">
+            以下展柜存在照明或锁具故障超时未修复情况，安保负责人需关注柜内贵重货品安全风险。
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            {overdueRiskShowcases.map((showcase) => (
+              <div key={showcase.showcaseId} className="bg-white rounded-lg p-3 border border-red-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-medium text-gray-800 flex items-center gap-2">
+                    <Diamond size={14} className="text-red-500" />
+                    {showcase.showcaseName}
+                  </div>
+                  <span className="text-xs text-red-600 font-medium">
+                    ¥{showcase.totalValue.toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 mb-2">
+                  故障类型：{showcase.orders.map((o) => repairTypeConfig[o.type].label).join('、')}
+                </div>
+                <div className="text-xs text-gray-500 mb-2">
+                  在柜贵重品：{showcase.items.length}件
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {showcase.items.slice(0, 3).map((item) => (
+                    <span
+                      key={item.id}
+                      className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded"
+                      title={`价值¥${item.value.toLocaleString()}`}
+                    >
+                      {item.name}
+                    </span>
+                  ))}
+                  {showcase.items.length > 3 && (
+                    <span className="text-xs text-gray-400 px-2 py-0.5">
+                      +{showcase.items.length - 3}件
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 bg-white rounded-xl shadow-sm border border-gray-200">
@@ -279,6 +370,43 @@ export default function RepairsPage() {
                   />
                 )}
               </div>
+
+              {(currentOrder.type === 'lighting' || currentOrder.type === 'lock') &&
+                currentOrder.status !== 'completed' &&
+                currentOrder.status !== 'closed' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield size={14} className="text-amber-600" />
+                    <h5 className="text-sm font-medium text-amber-700">安保提醒 - 在柜贵重品</h5>
+                  </div>
+                  <div className="text-xs text-amber-600 mb-2">
+                    {getShowcaseValuableItems(currentOrder.showcaseId).length}件贵重货品在柜，
+                    总价值约 ¥{getShowcaseValuableItems(currentOrder.showcaseId)
+                      .reduce((s, v) => s + v.value, 0)
+                      .toLocaleString()}
+                  </div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {getShowcaseValuableItems(currentOrder.showcaseId).map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between text-xs bg-white rounded px-2 py-1"
+                      >
+                        <span className="text-gray-700 flex items-center gap-1">
+                          <Diamond size={10} className="text-amber-500" />
+                          {item.name}
+                        </span>
+                        <span className="text-gray-500">¥{item.value.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {currentOrder.overdue && (
+                    <div className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                      <AlertTriangle size={12} />
+                      维修已超时，请注意安保巡查
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <h5 className="text-sm font-medium text-gray-700 mb-2">维修进度</h5>

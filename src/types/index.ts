@@ -1,5 +1,17 @@
 export type Role = 'manager' | 'staff' | 'repair' | 'security';
 
+export interface ValuableItem {
+  id: string;
+  showcaseId: string;
+  showcaseName: string;
+  name: string;
+  code: string;
+  type: string;
+  value: number;
+  status: 'on_display' | 'in_storage' | 'sold';
+  addedAt: string;
+}
+
 export interface Showcase {
   id: string;
   name: string;
@@ -31,6 +43,23 @@ export interface InspectionPlan {
   missedCount: number;
 }
 
+export interface InspectionPhoto {
+  id: string;
+  url: string;
+  label: string;
+  tag: 'environment' | 'equipment' | 'abnormal' | 'other';
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+export interface InspectionReview {
+  id: string;
+  reviewer: string;
+  reviewTime: string;
+  status: 'approved' | 'rejected';
+  comment: string;
+}
+
 export interface InspectionRecord {
   id: string;
   planId: string;
@@ -43,6 +72,31 @@ export interface InspectionRecord {
   itemsChecked: string[];
   abnormalities: string[];
   notes: string;
+  photos: InspectionPhoto[];
+  isMakeup: boolean;
+  makeupReason?: string;
+  reviewStatus: 'pending' | 'approved' | 'rejected' | 'not_required';
+  reviews: InspectionReview[];
+  locationVerified: boolean;
+}
+
+export interface InsuranceClaim {
+  id: string;
+  showcaseId: string;
+  showcaseName: string;
+  alarmId?: string;
+  type: 'temperature_risk' | 'humidity_risk' | 'equipment_failure' | 'security_breach' | 'other';
+  status: 'draft' | 'submitted' | 'reviewing' | 'approved' | 'rejected' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  title: string;
+  description: string;
+  reportedBy: string;
+  reportedAt: string;
+  estimatedLoss?: number;
+  handler?: string;
+  handlerComment?: string;
+  relatedRepairIds: string[];
+  relatedAlarmIds: string[];
 }
 
 export interface Alarm {
@@ -109,6 +163,8 @@ export interface AppState {
   alarms: Alarm[];
   repairOrders: RepairOrder[];
   newArrivalPlans: NewArrivalPlan[];
+  insuranceClaims: InsuranceClaim[];
+  valuableItems: ValuableItem[];
   currentUser: User;
   currentView: string;
 }

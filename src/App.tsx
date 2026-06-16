@@ -6,12 +6,16 @@ import InspectionsPage from './pages/InspectionsPage';
 import AlarmsPage from './pages/AlarmsPage';
 import RepairsPage from './pages/RepairsPage';
 import NewArrivalsPage from './pages/NewArrivalsPage';
+import RiskOverviewPage from './pages/RiskOverviewPage';
+import InsuranceClaimsPage from './pages/InsuranceClaimsPage';
 
 function AppContent() {
   const { state } = useApp();
 
   const renderPage = () => {
     switch (state.currentView) {
+      case 'riskoverview':
+        return <RiskOverviewPage />;
       case 'showcases':
         return <ShowcasesPage />;
       case 'inspections':
@@ -22,8 +26,10 @@ function AppContent() {
         return <RepairsPage />;
       case 'newarrivals':
         return <NewArrivalsPage />;
+      case 'insurance':
+        return <InsuranceClaimsPage />;
       default:
-        return <ShowcasesPage />;
+        return <RiskOverviewPage />;
     }
   };
 
