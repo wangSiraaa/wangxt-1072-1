@@ -316,7 +316,7 @@ export const mockInspectionRecords: InspectionRecord[] = [
     abnormalities: ['锁具反应迟钝'],
     notes: '锁具有时反应慢，建议安排检查',
     photos: [
-      { id: 'ph6', url: '', label: '锁具检查', uploadedAt: '2026-06-14 09:00', uploadedBy: '李店员' },
+      { id: 'ph6', url: '', label: '锁具检查', tag: 'equipment', uploadedAt: '2026-06-14 09:00', uploadedBy: '李店员' },
     ],
     isMakeup: false,
     reviewStatus: 'pending',

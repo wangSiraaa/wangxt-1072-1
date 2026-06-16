@@ -447,6 +447,17 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'UNFREEZE_NEW_ARRIVAL': {
+      const plan = state.newArrivalPlans.find((p) => p.id === action.payload.planId);
+      if (!plan) return state;
+      const hasActiveAlarm = state.alarms.some(
+        (a) => a.showcaseId === plan.showcaseId && a.status !== 'resolved'
+      );
+      const hasOpenRepair = state.repairOrders.some(
+        (r) => r.showcaseId === plan.showcaseId && r.status !== 'completed' && r.status !== 'closed'
+      );
+      if (hasActiveAlarm || hasOpenRepair) {
+        return state;
+      }
       const updatedPlans = state.newArrivalPlans.map((p) =>
         p.id === action.payload.planId
           ? { ...p, status: 'planned' as const, frozenReason: null, frozenAt: null }
@@ -456,6 +467,17 @@ function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'COMPLETE_NEW_ARRIVAL': {
+      const plan = state.newArrivalPlans.find((p) => p.id === action.payload.planId);
+      if (!plan) return state;
+      const hasActiveAlarm = state.alarms.some(
+        (a) => a.showcaseId === plan.showcaseId && a.status !== 'resolved'
+      );
+      const hasOpenRepair = state.repairOrders.some(
+        (r) => r.showcaseId === plan.showcaseId && r.status !== 'completed' && r.status !== 'closed'
+      );
+      if (hasActiveAlarm || hasOpenRepair) {
+        return state;
+      }
       const updatedPlans = state.newArrivalPlans.map((p) =>
         p.id === action.payload.planId
           ? { ...p, status: 'completed' as const }

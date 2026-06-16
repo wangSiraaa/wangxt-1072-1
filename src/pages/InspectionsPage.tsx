@@ -165,7 +165,6 @@ export default function InspectionsPage() {
       payload: {
         recordId: selectedRecord.id,
         review: newReview,
-        reviewStatus: reviewForm.status,
       },
     });
     setShowReviewModal(false);

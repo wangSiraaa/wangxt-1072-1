@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { NewArrivalPlan } from '../types';
+import { NewArrivalPlan, Alarm, RepairOrder, AppState } from '../types';
 import {
   Package,
   Snowflake,
@@ -21,6 +21,25 @@ const statusConfig = {
   completed: { label: '已完成', color: 'bg-green-100 text-green-700' },
   cancelled: { label: '已取消', color: 'bg-gray-100 text-gray-500' },
 };
+
+function getShowcaseBlockers(
+  showcaseId: string,
+  alarms: AppState['alarms'],
+  repairOrders: AppState['repairOrders']
+): { hasActiveAlarm: boolean; hasOpenRepair: boolean; activeAlarms: Alarm[]; openRepairs: RepairOrder[] } {
+  const activeAlarms = alarms.filter(
+    (a) => a.showcaseId === showcaseId && a.status !== 'resolved'
+  );
+  const openRepairs = repairOrders.filter(
+    (r) => r.showcaseId === showcaseId && r.status !== 'completed' && r.status !== 'closed'
+  );
+  return {
+    hasActiveAlarm: activeAlarms.length > 0,
+    hasOpenRepair: openRepairs.length > 0,
+    activeAlarms,
+    openRepairs,
+  };
+}
 
 export default function NewArrivalsPage() {
   const { state, dispatch } = useApp();
@@ -51,6 +70,12 @@ export default function NewArrivalsPage() {
     selectedPlan && state.newArrivalPlans.find((p) => p.id === selectedPlan.id)
       ? state.newArrivalPlans.find((p) => p.id === selectedPlan.id)!
       : selectedPlan;
+
+  const currentBlockers = currentPlan
+    ? getShowcaseBlockers(currentPlan.showcaseId, state.alarms, state.repairOrders)
+    : null;
+  const canUnfreeze = currentBlockers ? !currentBlockers.hasActiveAlarm && !currentBlockers.hasOpenRepair : false;
+  const canComplete = currentBlockers ? !currentBlockers.hasActiveAlarm && !currentBlockers.hasOpenRepair : false;
 
   const runDemo = () => {
     setShowDemoModal(true);
@@ -172,8 +197,54 @@ export default function NewArrivalsPage() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                {currentPlan.status === 'frozen' && (
+              <div className="space-y-3">
+                {currentBlockers && (currentBlockers.hasActiveAlarm || currentBlockers.hasOpenRepair) && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-red-700 font-medium text-sm mb-2">
+                      <Lock size={16} />
+                      放行受阻
+                    </div>
+                    <ul className="text-sm text-red-600 space-y-1">
+                      {currentBlockers.hasActiveAlarm && (
+                        <li>• 存在 {currentBlockers.activeAlarms.length} 条未处理报警，禁止放行上新</li>
+                      )}
+                      {currentBlockers.hasOpenRepair && (
+                        <li>• 存在 {currentBlockers.openRepairs.length} 条未完成维修，禁止放行上新</li>
+                      )}
+                    </ul>
+                    {currentBlockers.activeAlarms.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-red-100">
+                        <div className="text-xs font-medium text-red-600 mb-1">未处理报警：</div>
+                        <ul className="text-xs text-red-500 space-y-0.5">
+                          {currentBlockers.activeAlarms.slice(0, 3).map((a) => (
+                            <li key={a.id}>- {a.type} · {a.message}</li>
+                          ))}
+                          {currentBlockers.activeAlarms.length > 3 && (
+                            <li>... 另有 {currentBlockers.activeAlarms.length - 3} 条</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {currentBlockers.openRepairs.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-red-100">
+                        <div className="text-xs font-medium text-red-600 mb-1">未完成维修：</div>
+                        <ul className="text-xs text-red-500 space-y-0.5">
+                          {currentBlockers.openRepairs.slice(0, 3).map((r) => (
+                            <li key={r.id}>- {r.type} · 状态：{
+                              r.status === 'pending' ? '待处理' :
+                              r.status === 'in_progress' ? '处理中' : '等待配件'
+                            }</li>
+                          ))}
+                          {currentBlockers.openRepairs.length > 3 && (
+                            <li>... 另有 {currentBlockers.openRepairs.length - 3} 条</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentPlan.status === 'frozen' && canUnfreeze && (
                   <button
                     onClick={() => handleUnfreeze(currentPlan.id)}
                     className="w-full py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
@@ -182,13 +253,31 @@ export default function NewArrivalsPage() {
                     解除冻结
                   </button>
                 )}
-                {currentPlan.status === 'planned' && (
+                {currentPlan.status === 'frozen' && !canUnfreeze && (
+                  <button
+                    disabled
+                    className="w-full py-2 bg-gray-200 text-gray-500 text-sm rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Lock size={16} />
+                    解除冻结（报警/维修未闭环）
+                  </button>
+                )}
+                {currentPlan.status === 'planned' && canComplete && (
                   <button
                     onClick={() => handleComplete(currentPlan.id)}
                     className="w-full py-2 bg-gold-500 text-white text-sm rounded-lg hover:bg-gold-600 transition-colors flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={16} />
                     标记上新完成
+                  </button>
+                )}
+                {currentPlan.status === 'planned' && !canComplete && (
+                  <button
+                    disabled
+                    className="w-full py-2 bg-gray-200 text-gray-500 text-sm rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Lock size={16} />
+                    标记上新完成（报警/维修未闭环）
                   </button>
                 )}
               </div>
